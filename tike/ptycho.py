@@ -81,6 +81,7 @@ from __future__ import (absolute_import, division, print_function,
 import numpy as np
 import logging
 import scipy.ndimage.interpolation as sni
+from tike.sharp_wrapper import SharpEngine
 
 __author__ = "Doga Gursoy, Daniel Ching"
 __copyright__ = "Copyright (c) 2018, UChicago Argonne, LLC."
@@ -319,6 +320,53 @@ def uncombine_grids(
                              )[1:-1, 1:-1, ...]
     return grids.view(complex)[..., 0]
 
+def sharp(
+        data,
+        probe, v, h,
+        psi, psi_corner,
+        niter=1, lamda=0j, 
+        **kwargs
+):
+    """Solve a 2D ptychography problem using SHARP.
+
+    Parameters
+    ----------
+    lamda : float
+        The dual variable.
+
+    """
+    
+    translations = np.column_stack((h.ravel(), v.ravel(), np.zeros(data.shape[0]) ))
+
+    metadata = {}
+
+    metadata["translations"] = translations
+    metadata["all_translations"] = translations
+    metadata["reciprocal_res"] = [1.,1.]
+    metadata["illumination"] = probe
+    metadata["initial_image"] = psi
+    metadata["illumination_mask"] = np.ones(probe.shape)
+
+    options = {
+                     "iterations": 1,
+                     "illumination_ref": 2, 
+                     "background_ref": 0,
+                     "solver": "RAAR",
+                     "RAAR_beta": 0.6,
+                     "bck_type": 1
+                  }
+
+    engine = SharpEngine()
+
+    engine.set_metadata(metadata, data.shape)
+    engine.set_options(options)
+
+    engine.set_data(data)
+    engine.initialize()
+
+    image, illumination = engine.reconstruct(options["iterations"])
+
+    return image
 
 def grad(
         data,
@@ -396,16 +444,19 @@ def exitwave(probe, v, h, psi, psi_corner=None):
 def simulate(
         data_shape,
         probe, v, h,
-        psi, psi_corner=(0, 0),
+        psi, psi_corner=(0, 0), 
+        pad = True,
         **kwargs
 ):
     """Propagate the wavefront to the detector."""
     wavefront = exitwave(probe, v, h,
                          psi, psi_corner=psi_corner)
-    npadx = (data_shape[0] - wavefront.shape[-2]) // 2
-    npady = (data_shape[1] - wavefront.shape[-1]) // 2
-    padded_wave = fast_pad(wavefront, npadx, npady)
-    return np.square(np.abs(np.fft.fft2(padded_wave)))
+    if pad:
+        npadx = (data_shape[0] - wavefront.shape[-2]) // 2
+        npady = (data_shape[1] - wavefront.shape[-1]) // 2
+        wavefront = fast_pad(wavefront, npadx, npady)
+
+    return np.square(np.abs(np.fft.fft2(wavefront)))
 
 
 def reconstruct(
@@ -447,8 +498,16 @@ def reconstruct(
     # TODO: The size of this function may be reduced further if all recon clibs
     #   have a standard interface. Perhaps pass unique params to a generic
     #   struct or array.
+
     if algorithm is "grad":
         new_psi = grad(data=data,
+                       probe=probe, v=v, h=h,
+                       psi=psi, psi_corner=psi_corner,
+                       niter=niter, **kwargs
+                       )
+
+    elif algorithm is "sharp":
+        new_psi = sharp(data=data,
                        probe=probe, v=v, h=h,
                        psi=psi, psi_corner=psi_corner,
                        niter=niter, **kwargs
