@@ -55,6 +55,12 @@ class SharpEngine():
         else:
             self.eng.setIlluminationMask(sharp.af2thrust(af.array(metadata["illumination_mask"], dtype = np.complex64)))
 
+        if "image_regularization_term" in  metadata:
+            self.eng.m_image_regularized =  sharp.Range(af.array(metadata[image_regularization_term], dtype = np.complex64)) 
+
+        if "image_regularization_factor" in  metadata:
+            self.eng.setRegularizerImage(metadata["image_regularization_factor"])
+
 
     def set_options(self, options):
 

@@ -324,7 +324,7 @@ def sharp(
         data,
         probe, v, h,
         psi, psi_corner,
-        niter=1, lamda=0j, 
+        reg=None, niter=1, rho=None, lamda=None, 
         **kwargs
 ):
     """Solve a 2D ptychography problem using SHARP.
@@ -335,10 +335,20 @@ def sharp(
         The dual variable.
 
     """
-    
+
+    psi_prime = None
+
+    if reg is not None and lamda is not None and rho is not None:
+        print("Using external regularization term for SHARP")
+        psi_prime = reg + lamda/rho
+
     translations = np.column_stack((h.ravel(), v.ravel(), np.zeros(data.shape[0]) ))
 
     metadata = {}
+
+    if psi_prime is not None:
+        metadata["image_regularization_term"] = psi_prime
+        metadata["image_regularization_factor"] = rho
 
     metadata["translations"] = translations
     metadata["all_translations"] = translations
